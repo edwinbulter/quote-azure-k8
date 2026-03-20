@@ -1,0 +1,7 @@
+﻿services:
+  quote-azure-k8-backend:
+    image: quote-azure-k8-backend
+    build:
+      context: .
+      dockerfile: Dockerfile
+

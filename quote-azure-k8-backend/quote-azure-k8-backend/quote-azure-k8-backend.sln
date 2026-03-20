@@ -1,0 +1,21 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "quote-azure-k8-backend", "quote-azure-k8-backend.csproj", "{BF971F18-1EA1-493E-86B0-459334C35572}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{4C91BD44-7F78-4A19-8688-4D6C9BD84947}"
+	ProjectSection(SolutionItems) = preProject
+		compose.yaml = compose.yaml
+	EndProjectSection
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{BF971F18-1EA1-493E-86B0-459334C35572}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{BF971F18-1EA1-493E-86B0-459334C35572}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{BF971F18-1EA1-493E-86B0-459334C35572}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{BF971F18-1EA1-493E-86B0-459334C35572}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal
