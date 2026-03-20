@@ -1,13 +1,89 @@
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
+using Azure.Data.Tables;
+using System.Text;
+using quote_azure_k8_backend.Services;
+using quote_azure_k8_backend.Data;
+using quote_azure_k8_backend.Models;
+using quote_azure_k8_backend.Middleware;
+using Microsoft.AspNetCore.Identity;
+
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
-// Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
+// Add services to the container
+builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
+// Register HttpClient
+builder.Services.AddHttpClient();
+
+// Register Table Storage client
+builder.Services.AddSingleton(sp => {
+    var configuration = sp.GetRequiredService<IConfiguration>();
+    var connectionString = configuration["TableStorageConnectionString"];
+    return new TableServiceClient(connectionString);
+});
+
+// Register repositories
+builder.Services.AddSingleton<IQuoteRepository, QuoteRepository>();
+builder.Services.AddSingleton<IUserActivityRepository, UserActivityRepository>();
+builder.Services.AddSingleton<IUserRoleRepository, UserRoleRepository>();
+builder.Services.AddSingleton<IUserRepository, UserRepository>();
+
+// Register services
+builder.Services.AddSingleton<IQuoteService, QuoteService>();
+builder.Services.AddSingleton<IZenQuotesService, ZenQuotesService>();
+builder.Services.AddSingleton<IQuoteManagementService, QuoteManagementService>();
+
+// Register JWT authentication services
+builder.Services.AddSingleton<IJwtService, JwtService>();
+builder.Services.AddSingleton<IUserService, UserService>();
+
+// Register password hasher for JWT authentication
+builder.Services.AddSingleton<IPasswordHasher<User>, PasswordHasher<User>>();
+
+// Register admin services
+builder.Services.AddSingleton<IAdminService, AdminService>();
+
+// Register admin user seeder
+builder.Services.AddSingleton<AdminUserSeeder>();
+
+// Add JWT authentication
+var jwtSettings = builder.Configuration.GetSection("JwtSettings");
+var secretKey = jwtSettings["SecretKey"] ?? throw new InvalidOperationException("JWT SecretKey not configured");
+var key = Encoding.UTF8.GetBytes(secretKey);
+
+builder.Services.AddAuthentication(options =>
+{
+    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+})
+.AddJwtBearer(options =>
+{
+    options.RequireHttpsMetadata = false;
+    options.SaveToken = true;
+    options.TokenValidationParameters = new TokenValidationParameters
+    {
+        ValidateIssuerSigningKey = true,
+        IssuerSigningKey = new SymmetricSecurityKey(key),
+        ValidateIssuer = true,
+        ValidIssuer = jwtSettings["Issuer"],
+        ValidateAudience = true,
+        ValidAudience = jwtSettings["Audience"],
+        ValidateLifetime = true,
+        ClockSkew = TimeSpan.Zero
+    };
+});
+
+builder.Services.AddAuthorization();
+
+// Add logging
+builder.Services.AddLogging();
+
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
+// Configure the HTTP request pipeline
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -16,29 +92,16 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
-var summaries = new[]
-{
-    "Freezing", "Bracing", "Chilly", "Cool", "Mild", "Warm", "Balmy", "Hot", "Sweltering", "Scorching"
-};
+app.UseAuthentication();
+app.UseAuthorization();
 
-app.MapGet("/weatherforecast", () =>
-    {
-        var forecast = Enumerable.Range(1, 5).Select(index =>
-                new WeatherForecast
-                (
-                    DateOnly.FromDateTime(DateTime.Now.AddDays(index)),
-                    Random.Shared.Next(-20, 55),
-                    summaries[Random.Shared.Next(summaries.Length)]
-                ))
-            .ToArray();
-        return forecast;
-    })
-    .WithName("GetWeatherForecast")
-    .WithOpenApi();
+app.MapControllers();
+
+// Seed admin users on startup
+using (var scope = app.Services.CreateScope())
+{
+    var seeder = scope.ServiceProvider.GetRequiredService<AdminUserSeeder>();
+    await seeder.SeedAdminUsersAsync();
+}
 
 app.Run();
-
-record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
-{
-    public int TemperatureF => 32 + (int)(TemperatureC / 0.5556);
-}
