@@ -1,3 +1,15 @@
+## Goals
+step 1:
+- [ ] Migrate from Azure Function App to Azure Container Web App
+- [ ] Enable Docker Desktop testing with Azurite for local storage emulation
+step 2:
+- [ ] Run locally in Kubernetes function of Docker Desktop
+- [ ] Write deployment.yaml and service.yaml for Kubernetes
+- [ ] Try to run the application in kubernetes via kubectl apply
+step 3:
+- [ ] Use Terraform to deploy the application to Azure Container Apps
+
+
 ## Azurite
 Azurite is a local Azure Storage emulator that provides a local environment for testing Azure Storage services. It can emulate:
 - Blob Containers
