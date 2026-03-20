@@ -1,0 +1,11 @@
+{
+  "Version": 1,
+  "Hash": "Ip1dPStCmt3Ixn4F6tQo74YzhKlvU+y8QbAk+ajXBiw=",
+  "Source": "quote-azure-k8-backend",
+  "BasePath": "_content/quote-azure-k8-backend",
+  "Mode": "Default",
+  "ManifestType": "Build",
+  "ReferencedProjectsConfiguration": [],
+  "DiscoveryPatterns": [],
+  "Assets": []
+}

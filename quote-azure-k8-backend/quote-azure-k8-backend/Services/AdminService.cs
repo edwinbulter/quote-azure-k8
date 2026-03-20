@@ -10,6 +10,7 @@ namespace quote_azure_k8_backend.Services
         private readonly IUserRepository _userRepository;
         private readonly IQuoteRepository _quoteRepository;
         private readonly IUserActivityRepository _userActivityRepository;
+        private readonly IUserRoleRepository _userRoleRepository;
         private readonly IQuoteManagementService _quoteManagementService;
         private readonly ILogger<AdminService> _logger;
 
@@ -17,12 +18,14 @@ namespace quote_azure_k8_backend.Services
             IUserRepository userRepository,
             IQuoteRepository quoteRepository,
             IUserActivityRepository userActivityRepository,
+            IUserRoleRepository userRoleRepository,
             IQuoteManagementService quoteManagementService,
             ILogger<AdminService> logger)
         {
             _userRepository = userRepository;
             _quoteRepository = quoteRepository;
             _userActivityRepository = userActivityRepository;
+            _userRoleRepository = userRoleRepository;
             _quoteManagementService = quoteManagementService;
             _logger = logger;
         }
@@ -32,15 +35,23 @@ namespace quote_azure_k8_backend.Services
             try
             {
                 var users = await _userRepository.GetAllAsync();
+                var allRoles = await _userRoleRepository.GetAllUserRolesAsync();
+                var rolesByUser = allRoles.GroupBy(r => r.Username)
+                                         .ToDictionary(g => g.Key, g => g.Select(r => r.Role).ToArray());
+
                 var userInfos = new List<AdminUserInfo>();
 
                 foreach (var user in users)
                 {
+                    var roleList = rolesByUser.TryGetValue(user.Username, out var roles) 
+                                  ? roles 
+                                  : new[] { "USER" };
+
                     userInfos.Add(new AdminUserInfo
                     {
                         Username = user.Username,
                         Email = user.Email,
-                        Roles = new[] { "USER" }, // Simplified - would get from UserRoleRepository
+                        Roles = roleList,
                         Enabled = user.IsActive,
                         UserStatus = user.IsActive ? "Active" : "Inactive",
                         UserCreateDate = user.CreatedAt.ToString("yyyy-MM-dd"),

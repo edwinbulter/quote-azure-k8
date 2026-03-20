@@ -13,8 +13,19 @@ namespace quote_azure_k8_backend.Data
         public UserRoleRepository(TableServiceClient tableServiceClient, ILogger<UserRoleRepository> logger)
         {
             _tableClient = tableServiceClient.GetTableClient("userroles");
-            _tableClient.CreateIfNotExists();
             _logger = logger;
+            
+            // Create table asynchronously to avoid blocking startup
+            Task.Run(async () => {
+                try
+                {
+                    await _tableClient.CreateIfNotExistsAsync();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to create userroles table");
+                }
+            });
         }
 
         public async Task<UserRole?> GetUserRoleAsync(string username)
@@ -28,7 +39,7 @@ namespace quote_azure_k8_backend.Data
                 {
                     Username = entity["Username"].ToString(),
                     Role = entity["Role"].ToString(),
-                    CreatedAt = (DateTime)entity["CreatedAt"],
+                    CreatedAt = ((DateTimeOffset)entity["CreatedAt"]).DateTime,
                     UpdatedAt = entity["UpdatedAt"] as DateTime?,
                     CreatedBy = entity["CreatedBy"].ToString(),
                     UpdatedBy = entity["UpdatedBy"]?.ToString()
@@ -41,6 +52,37 @@ namespace quote_azure_k8_backend.Data
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error getting user role for user: {Username}", username);
+                throw;
+            }
+        }
+
+        public async Task<List<UserRole>> GetUserRolesAsync(string username)
+        {
+            try
+            {
+                var userRoles = new List<UserRole>();
+                // Query for all roles for this username (both old and new formats)
+                var query = _tableClient.QueryAsync<TableEntity>(filter: $"PartitionKey eq 'userroles' and (Username eq '{username}' or RowKey eq '{username}')");
+                
+                await foreach (var entity in query)
+                {
+                    var userRole = new UserRole
+                    {
+                        Username = entity["Username"].ToString(),
+                        Role = entity["Role"].ToString(),
+                        CreatedAt = ((DateTimeOffset)entity["CreatedAt"]).DateTime,
+                        UpdatedAt = entity["UpdatedAt"] as DateTime?,
+                        CreatedBy = entity["CreatedBy"].ToString(),
+                        UpdatedBy = entity["UpdatedBy"]?.ToString()
+                    };
+                    userRoles.Add(userRole);
+                }
+                
+                return userRoles;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting user roles for user: {Username}", username);
                 throw;
             }
         }
@@ -58,7 +100,7 @@ namespace quote_azure_k8_backend.Data
                     {
                         Username = entity["Username"].ToString(),
                         Role = entity["Role"].ToString(),
-                        CreatedAt = (DateTime)entity["CreatedAt"],
+                        CreatedAt = ((DateTimeOffset)entity["CreatedAt"]).DateTime,
                         UpdatedAt = entity["UpdatedAt"] as DateTime?,
                         CreatedBy = entity["CreatedBy"].ToString(),
                         UpdatedBy = entity["UpdatedBy"]?.ToString()
@@ -76,12 +118,15 @@ namespace quote_azure_k8_backend.Data
 
         public async Task<UserRole> CreateUserRoleAsync(UserRole userRole)
         {
-            var entity = new TableEntity("userroles", userRole.Username)
+            // Sanitize username for RowKey (replace invalid characters) - match original Function
+                var sanitizedUsername = userRole.Username.Replace("@", "-at-").Replace(".", "-dot-");
+                
+                var entity = new TableEntity("userroles", $"{sanitizedUsername}_{userRole.Role.ToUpper()}")
             {
                 ["Username"] = userRole.Username,
-                ["Role"] = userRole.Role,
-                ["CreatedAt"] = userRole.CreatedAt,
-                ["UpdatedAt"] = userRole.UpdatedAt,
+                ["Role"] = userRole.Role.ToUpper(),
+                ["CreatedAt"] = DateTime.SpecifyKind(userRole.CreatedAt, DateTimeKind.Utc),
+                ["UpdatedAt"] = DateTime.SpecifyKind(userRole.UpdatedAt ?? DateTime.UtcNow, DateTimeKind.Utc),
                 ["CreatedBy"] = userRole.CreatedBy,
                 ["UpdatedBy"] = userRole.UpdatedBy
             };
@@ -105,7 +150,7 @@ namespace quote_azure_k8_backend.Data
             {
                 ["Username"] = userRole.Username,
                 ["Role"] = userRole.Role,
-                ["CreatedAt"] = userRole.CreatedAt,
+                ["CreatedAt"] = DateTime.SpecifyKind(userRole.CreatedAt, DateTimeKind.Utc),
                 ["UpdatedAt"] = DateTime.UtcNow,
                 ["CreatedBy"] = userRole.CreatedBy,
                 ["UpdatedBy"] = userRole.UpdatedBy
@@ -147,8 +192,30 @@ namespace quote_azure_k8_backend.Data
         {
             try
             {
-                var userRole = await GetUserRoleAsync(username);
-                return userRole != null && userRole.Role.Equals(role, StringComparison.OrdinalIgnoreCase);
+                // First try new format (username_ROLE)
+                var sanitizedUsername = username.Replace("@", "-at-").Replace(".", "-dot-");
+                var newRowKey = $"{sanitizedUsername}_{role.ToUpper()}";
+                
+                try
+                {
+                    var response = await _tableClient.GetEntityAsync<TableEntity>("userroles", newRowKey);
+                    if (response != null)
+                        return true;
+                }
+                catch (RequestFailedException ex) when (ex.Status == 404)
+                {
+                    // New format not found, try old format (username)
+                }
+                
+                // Fall back to old format (single role per user)
+                var oldResponse = await _tableClient.GetEntityAsync<TableEntity>("userroles", username);
+                if (oldResponse != null)
+                {
+                    var storedRole = oldResponse.Value["Role"]?.ToString();
+                    return storedRole?.Equals(role, StringComparison.OrdinalIgnoreCase) == true;
+                }
+                
+                return false;
             }
             catch (Exception ex)
             {

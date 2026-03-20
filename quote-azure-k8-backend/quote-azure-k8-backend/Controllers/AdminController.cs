@@ -9,7 +9,7 @@ namespace quote_azure_k8_backend.Controllers
 {
     [ApiController]
     [Route("api/manage")]
-    [Authorize]
+    [Authorize(Roles = "ADMIN")]
     public class AdminController : ControllerBase
     {
         private readonly IAdminService _adminService;
@@ -29,13 +29,10 @@ namespace quote_azure_k8_backend.Controllers
         [HttpGet("users")]
         public async Task<ActionResult<IEnumerable<Models.Admin.AdminUserInfo>>> GetAllUsers()
         {
-            var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
-            if (string.IsNullOrEmpty(userId) || !await _userService.IsAdminAsync(userId))
-                return Forbid();
-
             try
             {
-                var users = await _adminService.ListAllUsersAsync();
+                var adminId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+                var users = await _userService.GetAllUsersAsync(adminId);
                 return Ok(users);
             }
             catch (Exception ex)
@@ -56,10 +53,6 @@ namespace quote_azure_k8_backend.Controllers
             [FromQuery] string? quoteText = null,
             [FromQuery] string? author = null)
         {
-            var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
-            if (string.IsNullOrEmpty(userId) || !await _userService.IsAdminAsync(userId))
-                return Forbid();
-
             try
             {
                 var quotes = await _adminService.GetQuotesAsync(page, pageSize, quoteText, author, sortBy, sortOrder);
@@ -77,17 +70,13 @@ namespace quote_azure_k8_backend.Controllers
         [HttpPost("quotes/fetch")]
         public async Task<ActionResult<QuoteAddResponse>> FetchQuotes()
         {
-            var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
-            if (string.IsNullOrEmpty(userId) || !await _userService.IsAdminAsync(userId))
-                return Forbid();
-
-            var user = await _userService.GetUserByIdAsync(userId);
-            if (user == null)
+            var username = User.FindFirst("unique_name")?.Value ?? User.FindFirst(System.Security.Claims.ClaimTypes.Name)?.Value;
+            if (string.IsNullOrEmpty(username))
                 return Unauthorized();
 
             try
             {
-                var result = await _adminService.FetchAndAddNewQuotesAsync(user.Username);
+                var result = await _adminService.FetchAndAddNewQuotesAsync(username);
                 return Ok(result);
             }
             catch (Exception ex)
@@ -97,15 +86,11 @@ namespace quote_azure_k8_backend.Controllers
         }
 
         /// <summary>
-        /// Get statistics (admin only)
+        /// Get system statistics (admin only)
         /// </summary>
         [HttpGet("stats")]
         public async Task<ActionResult<object>> GetStats()
         {
-            var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
-            if (string.IsNullOrEmpty(userId) || !await _userService.IsAdminAsync(userId))
-                return Forbid();
-
             try
             {
                 var totalLikes = await _adminService.GetTotalLikesAsync();
@@ -123,13 +108,9 @@ namespace quote_azure_k8_backend.Controllers
         [HttpPut("users/role")]
         public async Task<ActionResult> UpdateUserRole([FromBody] UpdateRoleRequest request)
         {
-            var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
-            if (string.IsNullOrEmpty(userId) || !await _userService.IsAdminAsync(userId))
-                return Forbid();
-
             try
             {
-                var result = await _userService.UpdateUserRoleAsync(userId, request);
+                var result = await _userService.UpdateUserRoleAsync(User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value, request);
                 if (result)
                     return Ok("User role updated successfully");
                 else
@@ -151,13 +132,9 @@ namespace quote_azure_k8_backend.Controllers
         [HttpDelete("users/role")]
         public async Task<ActionResult> RemoveUserRole([FromBody] UpdateRoleRequest request)
         {
-            var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
-            if (string.IsNullOrEmpty(userId) || !await _userService.IsAdminAsync(userId))
-                return Forbid();
-
             try
             {
-                var result = await _userService.RemoveUserRoleAsync(userId, request);
+                var result = await _userService.RemoveUserRoleAsync(User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value, request);
                 if (result)
                     return Ok("User role removed successfully");
                 else
@@ -176,13 +153,9 @@ namespace quote_azure_k8_backend.Controllers
         /// <summary>
         /// Delete user account (admin only)
         /// </summary>
-        [HttpDelete("users/account")]
+        [HttpDelete("users/delete")]
         public async Task<ActionResult> DeleteUserAccount([FromBody] RemoveUserAccountRequest request)
         {
-            var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
-            if (string.IsNullOrEmpty(userId) || !await _userService.IsAdminAsync(userId))
-                return Forbid();
-
             try
             {
                 var targetUser = await _userService.GetUserByUsernameAsync(request.Username);

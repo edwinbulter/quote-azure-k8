@@ -10,20 +10,27 @@ namespace quote_azure_k8_backend.Data
     {
         private readonly TableClient _userProgressTable;
         private readonly TableClient _userLikeTable;
-        private readonly TableClient _userViewTable;
         private readonly ILogger<UserActivityRepository> _logger;
 
         public UserActivityRepository(TableServiceClient tableServiceClient, ILogger<UserActivityRepository> logger)
         {
             _userProgressTable = tableServiceClient.GetTableClient("userprogress");
             _userLikeTable = tableServiceClient.GetTableClient("userlikes");
-            _userViewTable = tableServiceClient.GetTableClient("userviews");
-            
-            _userProgressTable.CreateIfNotExists();
-            _userLikeTable.CreateIfNotExists();
-            _userViewTable.CreateIfNotExists();
             
             _logger = logger;
+            
+            // Create tables asynchronously to avoid blocking startup
+            Task.Run(async () => {
+                try
+                {
+                    await _userProgressTable.CreateIfNotExistsAsync();
+                    await _userLikeTable.CreateIfNotExistsAsync();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to create user activity tables");
+                }
+            });
         }
 
         public async Task<bool> UpdateUserPreferencesAsync(UserProgress preferences)
@@ -88,10 +95,10 @@ namespace quote_azure_k8_backend.Data
                 // Get current max order for this user
                 var maxOrder = 0;
                 var query = _userLikeTable.QueryAsync<UserLikeEntity>(filter: $"PartitionKey eq '{userId}'");
-                await foreach (var entity in query)
+                await foreach (var existingEntity in query)
                 {
-                    if (entity.Order > maxOrder)
-                        maxOrder = entity.Order;
+                    if (existingEntity.Order > maxOrder)
+                        maxOrder = existingEntity.Order;
                 }
 
                 var entity = new UserLikeEntity(userId, quoteId)

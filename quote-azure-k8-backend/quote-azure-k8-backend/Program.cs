@@ -11,7 +11,10 @@ using Microsoft.AspNetCore.Identity;
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    .AddJsonOptions(options => {
+        options.JsonSerializerOptions.WriteIndented = false;
+    });
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
@@ -39,6 +42,7 @@ builder.Services.AddSingleton<IQuoteManagementService, QuoteManagementService>()
 // Register JWT authentication services
 builder.Services.AddSingleton<IJwtService, JwtService>();
 builder.Services.AddSingleton<IUserService, UserService>();
+builder.Services.AddSingleton<JwtAuthenticationMiddleware>();
 
 // Register password hasher for JWT authentication
 builder.Services.AddSingleton<IPasswordHasher<User>, PasswordHasher<User>>();

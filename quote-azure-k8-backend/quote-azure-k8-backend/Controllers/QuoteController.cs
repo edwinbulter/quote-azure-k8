@@ -33,12 +33,15 @@ namespace quote_azure_k8_backend.Controllers
         }
 
         /// <summary>
-        /// Get random quote (unauthenticated - no view recording)
+        /// Get next sequential quote for authenticated user (stores LastQuoteId in userprogress)
         /// </summary>
         [HttpGet("quote")]
-        public async Task<ActionResult<Quote>> GetRandomQuoteUnauthenticated()
+        [Authorize]
+        public async Task<ActionResult<Quote>> GetQuote()
         {
-            var quote = await _quoteService.GetQuoteAsync(null, new HashSet<int>());
+            var username = _authMiddleware.GetUsernameFromTokenAsync(Request);
+            var quote = await _quoteService.GetQuoteAsync(username, new HashSet<int>());
+            
             if (quote == null)
                 return NotFound();
             
@@ -61,7 +64,7 @@ namespace quote_azure_k8_backend.Controllers
         /// <summary>
         /// Get random quote (authenticated - stores LastQuoteId in userprogress)
         /// </summary>
-        [HttpGet("quote")]
+        [HttpGet("quote/authenticated")]
         [Authorize]
         public async Task<ActionResult<Quote>> GetRandomQuoteAuthenticated()
         {

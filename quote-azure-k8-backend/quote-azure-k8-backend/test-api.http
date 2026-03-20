@@ -36,8 +36,16 @@ Content-Type: application/json
 }
 
 > {%
-    const responseBody = JSON.parse(response.body);
-    client.global.set("authToken", responseBody.token);
+    // The response body is already a parsed object, not a JSON string
+    console.log("Response body type:", typeof response.body);
+    
+    if (typeof response.body === 'object' && response.body.token) {
+        client.global.set("authToken", response.body.token);
+        console.log("Token set successfully: " + response.body.token.substring(0, 20) + "...");
+    } else {
+        console.log("Token not found in response object");
+        console.log("Response body:", response.body);
+    }
 %}
 
 ### 0.2b Login to get JWT token (using username)
@@ -64,8 +72,16 @@ Content-Type: application/json
 }
 
 > {%
-const responseBody = JSON.parse(response.body);
-client.global.set("authToken", responseBody.token);
+    // The response body is already a parsed object, not a JSON string
+    console.log("Response body type:", typeof response.body);
+
+    if (typeof response.body === 'object' && response.body.token) {
+        client.global.set("authToken", response.body.token);
+        console.log("Token set successfully: " + response.body.token.substring(0, 20) + "...");
+    } else {
+        console.log("Token not found in response object");
+        console.log("Response body:", response.body);
+    }
 %}
 
 ### ============================================
@@ -115,11 +131,11 @@ Authorization: Bearer {{authToken}}
 ### ============================================
 
 ### 8. Like Quote
-POST {{baseUrl}}/api/quote/8/like
+POST {{baseUrl}}/api/quote/2/like
 Authorization: Bearer {{authToken}}
 
 ### 9. Unlike Quote
-DELETE {{baseUrl}}/api/quote/8/unlike
+DELETE {{baseUrl}}/api/quote/2/unlike
 Authorization: Bearer {{authToken}}
 
 ### 10. Get All Liked Quotes
@@ -189,8 +205,8 @@ Authorization: Bearer {{authToken}}
 Content-Type: application/json
 
 {
-  "username": "user-a",
-  "role": "Admin"
+  "username": "user-b",
+  "role": "User"
 }
 
 ### 25. Remove user role (admin only)
@@ -199,7 +215,7 @@ Authorization: Bearer {{authToken}}
 Content-Type: application/json
 
 {
-  "username": "user-a",
+  "username": "user-b",
   "role": "Admin"
 }
 

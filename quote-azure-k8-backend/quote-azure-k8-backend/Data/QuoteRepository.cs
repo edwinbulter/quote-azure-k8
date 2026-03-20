@@ -17,19 +17,17 @@ namespace quote_azure_k8_backend.Data
             _tableClient = tableServiceClient.GetTableClient("quotes");
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             
-            // Create table if it doesn't exist
-            _logger.LogInformation("Creating 'quotes' table if not exists");
-            try
-            {
-                var response = _tableClient.CreateIfNotExists();
-                _logger.LogInformation("Table creation response: {Response}", response?.Value?.Name ?? "null");
-                _logger.LogInformation("Table client initialized successfully");
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to create table");
-                throw;
-            }
+            // Create table asynchronously to avoid blocking startup
+            Task.Run(async () => {
+                try
+                {
+                    await _tableClient.CreateIfNotExistsAsync();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to create quotes table");
+                }
+            });
         }
 
         public async Task<Quote?> GetQuoteByIdAsync(int id)
@@ -75,6 +73,13 @@ namespace quote_azure_k8_backend.Data
                 var entity = new QuoteEntity(quote);
                 await _tableClient.AddEntityAsync(entity);
                 return entity.ToQuote();
+            }
+            catch (RequestFailedException ex) when (ex.Status == 409)
+            {
+                // Quote already exists, return the existing quote
+                _logger.LogWarning("Quote with ID {QuoteId} already exists", quote.Id);
+                var existingQuote = await GetQuoteByIdAsync(quote.Id);
+                return existingQuote ?? quote;
             }
             catch (Exception ex)
             {

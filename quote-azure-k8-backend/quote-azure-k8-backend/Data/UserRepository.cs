@@ -15,8 +15,19 @@ namespace quote_azure_k8_backend.Data
         public UserRepository(TableServiceClient tableServiceClient, ILogger<UserRepository> logger)
         {
             _tableClient = tableServiceClient.GetTableClient("users");
-            _tableClient.CreateIfNotExists();
             _logger = logger;
+            
+            // Create table asynchronously to avoid blocking startup
+            Task.Run(async () => {
+                try
+                {
+                    await _tableClient.CreateIfNotExistsAsync();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to create users table");
+                }
+            });
         }
 
         public async Task<User> CreateAsync(User user)
@@ -98,8 +109,8 @@ namespace quote_azure_k8_backend.Data
                         Email = entity["Email"].ToString(),
                         Username = entity.RowKey,
                         PasswordHash = entity["PasswordHash"].ToString(),
-                        CreatedAt = (DateTime)entity["CreatedAt"],
-                        UpdatedAt = (DateTime)entity["UpdatedAt"],
+                        CreatedAt = ((DateTimeOffset)entity["CreatedAt"]).DateTime,
+                        UpdatedAt = ((DateTimeOffset)entity["UpdatedAt"]).DateTime,
                         IsActive = (bool)entity["IsActive"],
                         PasswordResetToken = entity["PasswordResetToken"]?.ToString(),
                         PasswordResetExpires = entity["PasswordResetExpires"] as DateTime?
@@ -119,21 +130,26 @@ namespace quote_azure_k8_backend.Data
         {
             try
             {
-                var response = await _tableClient.GetEntityAsync<TableEntity>("users", id);
-                var entity = response.Value;
+                // Look for user by PartitionKey (user ID) since that's how we store it
+                var query = _tableClient.QueryAsync<TableEntity>(filter: $"PartitionKey eq '{id}'");
                 
-                return new User
+                await foreach (var entity in query)
                 {
-                    Id = entity.PartitionKey,
-                    Email = entity["Email"].ToString(),
-                    Username = entity.RowKey,
-                    PasswordHash = entity["PasswordHash"].ToString(),
-                    CreatedAt = (DateTime)entity["CreatedAt"],
-                    UpdatedAt = (DateTime)entity["UpdatedAt"],
-                    IsActive = (bool)entity["IsActive"],
-                    PasswordResetToken = entity["PasswordResetToken"]?.ToString(),
-                    PasswordResetExpires = entity["PasswordResetExpires"] as DateTime?
-                };
+                    return new User
+                    {
+                        Id = entity.PartitionKey,
+                        Email = entity["Email"].ToString(),
+                        Username = entity.RowKey,
+                        PasswordHash = entity["PasswordHash"].ToString(),
+                        CreatedAt = ((DateTimeOffset)entity["CreatedAt"]).DateTime,
+                        UpdatedAt = ((DateTimeOffset)entity["UpdatedAt"]).DateTime,
+                        IsActive = (bool)entity["IsActive"],
+                        PasswordResetToken = entity["PasswordResetToken"]?.ToString(),
+                        PasswordResetExpires = entity["PasswordResetExpires"] as DateTime?
+                    };
+                }
+                
+                return null;
             }
             catch (RequestFailedException ex) when (ex.Status == 404)
             {
@@ -159,8 +175,8 @@ namespace quote_azure_k8_backend.Data
                         Email = entity["Email"].ToString(),
                         Username = entity.RowKey,
                         PasswordHash = entity["PasswordHash"].ToString(),
-                        CreatedAt = (DateTime)entity["CreatedAt"],
-                        UpdatedAt = (DateTime)entity["UpdatedAt"],
+                        CreatedAt = ((DateTimeOffset)entity["CreatedAt"]).DateTime,
+                        UpdatedAt = ((DateTimeOffset)entity["UpdatedAt"]).DateTime,
                         IsActive = (bool)entity["IsActive"],
                         PasswordResetToken = entity["PasswordResetToken"]?.ToString(),
                         PasswordResetExpires = entity["PasswordResetExpires"] as DateTime?
@@ -188,8 +204,8 @@ namespace quote_azure_k8_backend.Data
                         Email = entity["Email"].ToString(),
                         Username = entity.RowKey,
                         PasswordHash = entity["PasswordHash"].ToString(),
-                        CreatedAt = (DateTime)entity["CreatedAt"],
-                        UpdatedAt = (DateTime)entity["UpdatedAt"],
+                        CreatedAt = ((DateTimeOffset)entity["CreatedAt"]).DateTime,
+                        UpdatedAt = ((DateTimeOffset)entity["UpdatedAt"]).DateTime,
                         IsActive = (bool)entity["IsActive"],
                         PasswordResetToken = entity["PasswordResetToken"]?.ToString(),
                         PasswordResetExpires = entity["PasswordResetExpires"] as DateTime?

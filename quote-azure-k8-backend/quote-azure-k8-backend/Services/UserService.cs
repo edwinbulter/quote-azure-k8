@@ -147,36 +147,25 @@ namespace quote_azure_k8_backend.Services
         {
             try
             {
-                // Check if admin is actually an admin
                 var admin = await _userRepository.GetByIdAsync(adminId);
-                if (admin == null || !await IsAdminAsync(adminId))
-                    throw new UnauthorizedAccessException("Only admins can update user roles");
+                if (admin == null)
+                    throw new UnauthorizedAccessException("Admin user not found");
 
-                var targetUser = await _userRepository.GetByUsernameAsync(request.UserId);
+                var targetUser = await _userRepository.GetByUsernameAsync(request.username);
                 if (targetUser == null)
                     return false;
 
-                var existingRole = await _userRoleRepository.GetUserRoleAsync(targetUser.Username);
-                if (existingRole != null)
+                // Create new role assignment (supports multiple roles per user)
+                var newRole = new UserRole
                 {
-                    existingRole.Role = request.NewRole;
-                    existingRole.UpdatedAt = DateTime.UtcNow;
-                    existingRole.UpdatedBy = admin.Username;
-                    await _userRoleRepository.UpdateUserRoleAsync(existingRole);
-                }
-                else
-                {
-                    var newRole = new UserRole
-                    {
-                        Username = targetUser.Username,
-                        Role = request.NewRole,
-                        CreatedAt = DateTime.UtcNow,
-                        CreatedBy = admin.Username
-                    };
-                    await _userRoleRepository.CreateUserRoleAsync(newRole);
-                }
+                    Username = targetUser.Username,
+                    Role = request.role.ToUpper(),
+                    CreatedAt = DateTime.UtcNow,
+                    CreatedBy = admin.Username
+                };
+                await _userRoleRepository.CreateUserRoleAsync(newRole);
 
-                _logger.LogInformation("User role updated: {Username} -> {Role}", targetUser.Username, request.NewRole);
+                _logger.LogInformation("User role updated: {Username} -> {Role}", targetUser.Username, request.role);
                 return true;
             }
             catch (Exception ex)
@@ -190,11 +179,7 @@ namespace quote_azure_k8_backend.Services
         {
             try
             {
-                // Check if admin is actually an admin
-                if (!await IsAdminAsync(adminId))
-                    throw new UnauthorizedAccessException("Only admins can remove user roles");
-
-                var targetUser = await _userRepository.GetByUsernameAsync(request.UserId);
+                var targetUser = await _userRepository.GetByUsernameAsync(request.username);
                 if (targetUser == null)
                     return false;
 
@@ -232,17 +217,22 @@ namespace quote_azure_k8_backend.Services
 
                 foreach (var user in users)
                 {
-                    var userRole = await _userRoleRepository.GetUserRoleAsync(user.Username);
-                    userInfos.Add(new Models.Admin.AdminUserInfo
+                    // Get user roles
+                    var userRoles = await _userRoleRepository.GetUserRolesAsync(user.Username);
+                    var roles = userRoles.Select(r => string.IsNullOrEmpty(r.Role) ? string.Empty : r.Role.ToUpper()).ToArray();
+                    
+                    var userInfo = new Models.Admin.AdminUserInfo
                     {
                         Username = user.Username,
                         Email = user.Email,
-                        Roles = userRole != null ? new[] { userRole.Role } : new string[0],
+                        Roles = roles,
                         Enabled = user.IsActive,
-                        UserStatus = user.IsActive ? "Active" : "Inactive",
-                        UserCreateDate = user.CreatedAt.ToString("yyyy-MM-dd"),
-                        UserLastModifiedDate = user.UpdatedAt.ToString("yyyy-MM-dd")
-                    });
+                        UserStatus = user.IsActive ? "ACTIVE" : "INACTIVE",
+                        UserCreateDate = user.CreatedAt.ToString("yyyy-MM-ddTHH:mm:ssZ"),
+                        UserLastModifiedDate = user.UpdatedAt.ToString("yyyy-MM-ddTHH:mm:ssZ")
+                    };
+                    
+                    userInfos.Add(userInfo);
                 }
 
                 return userInfos;
