@@ -1,0 +1,70 @@
+# deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: quote-app-deployment
+  namespace: quote-app
+  labels:
+    app: quote-app
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: quote-app
+  template:
+    metadata:
+      labels:
+        app: quote-app
+    spec:
+      containers:
+      - name: quote-app
+        image: quote-azure-k8-backend:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8080
+        env:
+        - name: ASPNETCORE_ENVIRONMENT
+          valueFrom:
+            configMapKeyRef:
+              name: quote-app-config
+              key: ASPNETCORE_ENVIRONMENT
+        - name: TableStorageConnectionString
+          valueFrom:
+            configMapKeyRef:
+              name: quote-app-config
+              key: TableStorageConnectionString
+        - name: JwtSecret
+          valueFrom:
+            secretKeyRef:
+              name: quote-app-secret
+              key: JwtSecret
+        - name: Logging__Console__Enabled
+          valueFrom:
+            configMapKeyRef:
+              name: quote-app-config
+              key: Logging__Console__Enabled
+        - name: Logging__Console__LogLevel__Default
+          valueFrom:
+            configMapKeyRef:
+              name: quote-app-config
+              key: Logging__Console__LogLevel__Default
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /api/quotes/random
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /api/quotes/random
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+

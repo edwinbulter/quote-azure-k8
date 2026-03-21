@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging;
 using quote_azure_k8_backend.Models;
 using quote_azure_k8_backend.Data;
 using Microsoft.AspNetCore.Identity;
+using Azure;
 
 namespace quote_azure_k8_backend.Services
 {
@@ -29,6 +30,8 @@ namespace quote_azure_k8_backend.Services
             try
             {
                 _logger.LogInformation("Starting admin user seeding process");
+            _logger.LogInformation("=== DEBUG LOG: CHANGES APPLIED - VERSION 3.0 ===");
+            _logger.LogInformation("=== IF YOU SEE THIS, DOCKER BUILD IS WORKING ===");
 
                 // Wait a bit for tables to be created asynchronously
                 await Task.Delay(2000);
@@ -40,15 +43,14 @@ namespace quote_azure_k8_backend.Services
                 
                 while (retryCount < maxRetries)
                 {
-                    try
-                    {
-                        existingAdmin = await _userRepository.GetByUsernameAsync("admin");
+                    existingAdmin = await _userRepository.GetByUsernameAsync("admin");
+                    if (existingAdmin != null)
                         break;
-                    }
-                    catch (Azure.RequestFailedException ex) when (ex.Status == 404)
+                        
+                    retryCount++;
+                    if (retryCount < maxRetries)
                     {
-                        retryCount++;
-                        _logger.LogWarning("Tables not ready yet, retrying in 2 seconds... (Attempt {RetryCount}/{MaxRetries})", retryCount, maxRetries);
+                        _logger.LogInformation("Admin user not found, retrying in 2 seconds... ({RetryCount}/{MaxRetries})", retryCount, maxRetries);
                         await Task.Delay(2000);
                     }
                 }
@@ -66,7 +68,10 @@ namespace quote_azure_k8_backend.Services
                     }
                     
                     // Check if admin role is assigned
+                    _logger.LogInformation("About to call GetUserRoleAsync for admin user");
                     var existingRole = await _userRoleRepository.GetUserRoleAsync("admin");
+                    _logger.LogInformation("GetUserRoleAsync returned: {ExistingRole}", existingRole?.ToString() ?? "null");
+                    
                     if (existingRole != null && existingRole.Role == "ADMIN")
                     {
                         _logger.LogInformation("Admin role already assigned, seeding complete");
@@ -76,17 +81,30 @@ namespace quote_azure_k8_backend.Services
                     {
                         _logger.LogInformation("Admin role not found or incorrect, assigning ADMIN role...");
                         
-                        // Assign admin role
-                        var adminRoleAssignment = new UserRole
+                        // Check if admin role already exists
+                        _logger.LogInformation("Checking if admin role exists for user: admin");
+                        var roleExists = await _userRoleRepository.UserHasRoleAsync("admin", "ADMIN");
+                        _logger.LogInformation("UserHasRoleAsync result: {RoleExists}", roleExists);
+                        
+                        if (roleExists)
                         {
-                            Username = "admin",
-                            Role = "ADMIN",
-                            CreatedAt = DateTime.UtcNow,
-                            CreatedBy = "System"
-                        };
+                            _logger.LogInformation("Admin role already exists for admin user");
+                        }
+                        else
+                        {
+                            _logger.LogInformation("Admin role does not exist, creating new role...");
+                            // Assign admin role
+                            var adminRoleAssignment = new UserRole
+                            {
+                                Username = "admin",
+                                Role = "ADMIN",
+                                CreatedAt = DateTime.UtcNow,
+                                CreatedBy = "System"
+                            };
 
-                        await _userRoleRepository.CreateUserRoleAsync(adminRoleAssignment);
-                        _logger.LogInformation("Admin role assigned to existing admin user");
+                            await _userRoleRepository.CreateUserRoleAsync(adminRoleAssignment);
+                            _logger.LogInformation("Admin role assigned to existing admin user");
+                        }
                         return;
                     }
                 }
@@ -115,8 +133,15 @@ namespace quote_azure_k8_backend.Services
                     CreatedBy = "System"
                 };
 
-                await _userRoleRepository.CreateUserRoleAsync(adminRole);
-                _logger.LogInformation("Admin role assigned to user: {Username}", createdUser.Username);
+                try
+                {
+                    await _userRoleRepository.CreateUserRoleAsync(adminRole);
+                    _logger.LogInformation("Admin role assigned to user: {Username}", createdUser.Username);
+                }
+                catch (Azure.RequestFailedException ex) when (ex.Status == 409)
+                {
+                    _logger.LogInformation("Admin role already exists for user: {Username}", createdUser.Username);
+                }
 
                 // Create test user
                 var existingTestUser = await _userRepository.GetByUsernameAsync("user-1");

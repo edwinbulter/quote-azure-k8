@@ -32,18 +32,50 @@ namespace quote_azure_k8_backend.Data
         {
             try
             {
-                var response = await _tableClient.GetEntityAsync<TableEntity>("userroles", username);
-                var entity = response.Value;
+                // Try new format first (username_ADMIN)
+                var sanitizedUsername = username.Replace("@", "-at-").Replace(".", "-dot-");
+                var newRowKey = $"{sanitizedUsername}_ADMIN";
                 
-                return new UserRole
+                _logger.LogInformation("GetUserRoleAsync: Looking for user {Username} with RowKey {RowKey}", username, newRowKey);
+                
+                try
                 {
-                    Username = entity["Username"].ToString(),
-                    Role = entity["Role"].ToString(),
-                    CreatedAt = ((DateTimeOffset)entity["CreatedAt"]).DateTime,
-                    UpdatedAt = entity["UpdatedAt"] as DateTime?,
-                    CreatedBy = entity["CreatedBy"].ToString(),
-                    UpdatedBy = entity["UpdatedBy"]?.ToString()
-                };
+                    var response = await _tableClient.GetEntityAsync<TableEntity>("userroles", newRowKey);
+                    _logger.LogInformation("GetUserRoleAsync: Found user role with new format");
+                    var entity = response.Value;
+                    
+                    return new UserRole
+                    {
+                        Username = entity["Username"].ToString(),
+                        Role = entity["Role"].ToString(),
+                        CreatedAt = ((DateTimeOffset)entity["CreatedAt"]).DateTime,
+                        UpdatedAt = entity["UpdatedAt"] as DateTime?,
+                        CreatedBy = entity["CreatedBy"].ToString(),
+                        UpdatedBy = entity["UpdatedBy"]?.ToString()
+                    };
+                }
+                catch (RequestFailedException ex) when (ex.Status == 404)
+                {
+                    _logger.LogInformation("GetUserRoleAsync: New format not found, trying old format with RowKey {Username}", username);
+                    // Fall back to old format
+                    var oldResponse = await _tableClient.GetEntityAsync<TableEntity>("userroles", username);
+                    _logger.LogInformation("GetUserRoleAsync: Found user role with old format");
+                    var entity = oldResponse.Value;
+                    
+                    return new UserRole
+                    {
+                        Username = entity["Username"].ToString(),
+                        Role = entity["Role"].ToString(),
+                        CreatedAt = ((DateTimeOffset)entity["CreatedAt"]).DateTime,
+                        UpdatedAt = entity["UpdatedAt"] as DateTime?,
+                        CreatedBy = entity["CreatedBy"].ToString(),
+                        UpdatedBy = entity["UpdatedBy"]?.ToString()
+                    };
+                }
+                catch (RequestFailedException ex) when (ex.Status == 404)
+                {
+                    return null;
+                }
             }
             catch (RequestFailedException ex) when (ex.Status == 404)
             {

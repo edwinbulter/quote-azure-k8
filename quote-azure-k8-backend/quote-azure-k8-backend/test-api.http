@@ -88,9 +88,6 @@ Content-Type: application/json
 ### PUBLIC ENDPOINTS (No authentication required)
 ### ============================================
 
-### 1 GET Random Quote (unauthenticated - no view recording)
-GET {{baseUrl}}/api/quote
-
 ### 1. GET Random Quote (unauthenticated - no view recording)
 GET {{baseUrl}}/api/quotes/random
 
