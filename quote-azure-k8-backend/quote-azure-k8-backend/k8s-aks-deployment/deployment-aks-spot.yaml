@@ -1,0 +1,65 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: quote-azure-k8-backend
+  namespace: quote-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: quote-azure-k8-backend
+  template:
+    metadata:
+      labels:
+        app: quote-azure-k8-backend
+    spec:
+      # This makes the pod run on spot instances
+      tolerations:
+      - key: "kubernetes.azure.com/scalesetpriority"
+        operator: "Equal"
+        value: "spot"
+        effect: "NoSchedule"
+      # This prefers spot instances
+      nodeSelector:
+        kubernetes.azure.com/scalesetpriority: "spot"
+      containers:
+      - name: quote-azure-k8-backend
+        image: kabulterquoteazurek8acr.azurecr.io/quote-azure-k8-backend:latest
+        ports:
+        - containerPort: 8080
+        env:
+        - name: ASPNETCORE_ENVIRONMENT
+          valueFrom:
+            configMapKeyRef:
+              name: quote-app-config
+              key: ASPNETCORE_ENVIRONMENT
+        - name: TableStorageConnectionString
+          valueFrom:
+            configMapKeyRef:
+              name: quote-app-config
+              key: TableStorageConnectionString
+        - name: JwtSecret
+          valueFrom:
+            secretKeyRef:
+              name: quote-app-secret-aks
+              key: JwtSecret
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: quote-azure-k8-backend-service
+  namespace: quote-app
+spec:
+  selector:
+    app: quote-azure-k8-backend
+  ports:
+  - port: 80
+    targetPort: 8080
+  type: LoadBalancer

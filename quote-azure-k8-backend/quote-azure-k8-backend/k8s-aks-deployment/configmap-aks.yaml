@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: quote-app-config
+  namespace: quote-app
+data:
+  ASPNETCORE_ENVIRONMENT: "Production"
+  TableStorageConnectionString: "DefaultEndpointsProtocol=https;EndpointSuffix=core.windows.net;AccountName=kabulterquotek8store;AccountKey=AkXEFTVaPwvto4WWiuJxb3B+UvyItq8ibEt7FXAPzhA6PI5QZoJOsTUWyTxfGAlx/uyGF8OMlkc++AStM8mWwQ==;BlobEndpoint=https://kabulterquotek8store.blob.core.windows.net/;FileEndpoint=https://kabulterquotek8store.file.core.windows.net/;QueueEndpoint=https://kabulterquotek8store.queue.core.windows.net/;TableEndpoint=https://kabulterquotek8store.table.core.windows.net/"
+  Logging__Console__Enabled: "false"
+  Logging__Console__LogLevel__Default: "Warning"
