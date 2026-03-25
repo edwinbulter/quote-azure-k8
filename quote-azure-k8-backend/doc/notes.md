@@ -4,9 +4,9 @@ step 1:
 - [X] Enable Docker Desktop testing with Azurite for local storage emulation.
 
 step 2:
-- [ ] Run locally in Kubernetes function of Docker Desktop
-- [ ] Write deployment.yaml and service.yaml for Kubernetes
-- [ ] Try to run the application in kubernetes via kubectl apply
+- [X] Run locally in Kubernetes function of Docker Desktop
+- [X] Write deployment.yaml and service.yaml for Kubernetes
+- [X] Try to run the application in kubernetes via kubectl apply
 
 step 3:
 - [ ] Use Terraform to deploy the application to Azure Container Apps
@@ -98,9 +98,10 @@ kubectl create secret generic quote-app-secret-aks \
 
 
 ## Kubernetes commands
+```bash
 kubectl config get-contexts
 kubectl config use-context docker-desktop
-
+kubectl config set-context --current --namespace=quote-app
 
 kubectl get pods -n quote-app
 kubectl get services -n quote-app
@@ -120,4 +121,61 @@ kubectl apply -f service.yaml -n quote-app
 kubectl apply -f configmap.yaml -n quote-app
 kubectl apply -f secret.yaml -n quote-app
 
+kubectl scale deployments/quote-app-deployment --replicas=4 -n quote-app
+```
+
+start port-forward job:
+```bash
+kubectl port-forward service/quote-app-service 8080:80 -n quote-app &
+```
+
+stop port-forward job:
+```bash
+e.g.h.bulter@MacBook-Pro-van-EGH k8s-deployment % jobs
+[1]  + running    kubectl port-forward service/quote-app-service 8080:80 -n quote-app
+e.g.h.bulter@MacBook-Pro-van-EGH k8s-deployment % kill %1
+[1]  + terminated  kubectl port-forward service/quote-app-service 8080:80 -n quote-app
+```
+
+Instead of the port-forward, you can update the service.yaml with type: LoadBalancer and then use the external IP to access the API.
+```yaml
+# service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: quote-app-service
+  namespace: quote-app
+spec:
+  selector:
+    app: quote-app
+  ports:
+  - protocol: TCP
+    port: 8080
+    targetPort: 8080
+  type: LoadBalancer
+```
+
+Then apply the service:
+
+```bash
+kubectl apply -f service.yaml -n quote-app
+```
+
+## Kubernetes drift
+Om drift te voorkomen tussen je draaiende cluster en je service.yaml, is de gouden regel: stop met het direct gebruiken van kubectl commando's die de staat aanpassen (zoals kubectl patch of kubectl edit).
+
+Veranderingen bekijken/testen:
+```bash
+# bekijk wat er verandert zonder daadwerkelijk te applyen
+kubectl diff -f service.yaml -n quote-app
+
+# test de syntax zonder daadwerkelijk te applyen
+kubectl apply -f service.yaml --dry-run=client
+```
+
+### GitOps
+Als je dit echt serieus wilt aanpakken (vooral in teams), gebruik je GitOps met tools zoals ArgoCD of Flux.
+- Hoe het werkt: Je commit je service.yaml naar GitHub/GitLab.
+- De tool: ArgoCD kijkt constant naar je Git-repo én naar je cluster.
+- Drift detection: Zodra iemand handmatig kubectl patch gebruikt, ziet ArgoCD dat het cluster niet meer gelijk is aan Git ("Out of Sync"). Hij kan dit dan automatisch terugdraaien naar de staat in Git.
 
