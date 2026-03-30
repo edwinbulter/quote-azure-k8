@@ -59,7 +59,7 @@ az group list --query "[?contains(name, 'test-')].name" -o tsv
 4. **Azure Subscription**
    - You need an active Azure subscription with sufficient permissions
 
-## 🚀 Step 1: Cost-Effective Testing Scripts
+## 🚀 Step 1: Zero-Cost Testing Scripts
 
 ### Create Test Cluster Script
 
@@ -68,18 +68,54 @@ Create `create-test-cluster.sh`:
 ```bash
 #!/bin/bash
 # create-test-cluster.sh
-PERMANENT_RG="quote-azure-k8-backend"  # Existing resource group with ACR/Storage
-RESOURCE_GROUP="test-$(date +%s)"   # Temporary resource group for AKS
+RESOURCE_GROUP="quote-azure-k8-backend"  # Fixed name
 AKS_NAME="test-aks"
 LOCATION="westeurope"
-ACR_NAME="kabulterquoteazurek8acr"
+ACR_NAME="kabulterquotek8acr"  # Fixed name
+STORAGE_ACCOUNT="kabulterquotek8storage"  # Fixed name
 
 echo "=== Creating Complete Test Environment ==="
-echo "Permanent RG: $PERMANENT_RG (ACR, Storage)"
-echo "Temporary RG: $RESOURCE_GROUP (AKS)"
+echo "Resource Group: $RESOURCE_GROUP (All resources)"
+echo "AKS Name: $AKS_NAME"
+echo "ACR Name: $ACR_NAME"
+echo "Storage Account: $STORAGE_ACCOUNT"
 
-# Create temporary resource group for AKS
+# Clean up if resources already exist
+if az group show --name $RESOURCE_GROUP >/dev/null 2>&1; then
+    echo "⚠️  Resource group already exists. Cleaning up first..."
+    az group delete --name $RESOURCE_GROUP --yes --no-wait
+    echo "Waiting for cleanup to complete..."
+    while az group show --name $RESOURCE_GROUP >/dev/null 2>&1; do
+        echo "Still deleting... (waiting 10 seconds)"
+        sleep 10
+    done
+    echo "✅ Cleanup complete. Creating fresh environment..."
+fi
+
+# Create resource group for everything
 az group create --name $RESOURCE_GROUP --location $LOCATION
+
+# Create ACR
+echo "Creating Azure Container Registry..."
+az acr create --resource-group $RESOURCE_GROUP --name $ACR_NAME --sku Basic --location $LOCATION
+
+# Create Storage Account
+echo "Creating Storage Account..."
+az storage account create \
+  --name $STORAGE_ACCOUNT \
+  --resource-group $RESOURCE_GROUP \
+  --location $LOCATION \
+  --sku Standard_LRS \
+  --kind StorageV2
+
+# Get storage connection string
+STORAGE_CONNECTION=$(az storage account show-connection-string --name $STORAGE_ACCOUNT --resource-group $RESOURCE_GROUP --query connectionString --output tsv)
+
+# Build and push Docker image
+echo "Building and pushing Docker image..."
+az acr login --name $ACR_NAME
+cd quote-azure-k8-backend
+docker buildx build --platform linux/amd64 -t $ACR_NAME.azurecr.io/quote-azure-k8-backend:latest . --push
 
 # Create AKS with B2s_v2 nodes first, then add spot pool
 echo "Creating AKS cluster with B2s_v2 nodes..."
@@ -105,29 +141,8 @@ az aks nodepool add \
   --spot-max-price -1 \
   --eviction-policy Delete
 
-# Remove default node pool to use only spot instances
-echo "Removing default node pool..."
-az aks nodepool delete \
-  --resource-group $RESOURCE_GROUP \
-  --cluster-name $AKS_NAME \
-  --name nodepool1 \
-  --no-wait
-
-# Get credentials
-echo "Getting cluster credentials..."
-az aks get-credentials --resource-group $RESOURCE_GROUP --name $AKS_NAME --overwrite-existing
-
-# Wait for cluster to be ready
-echo "Waiting for cluster to be ready..."
-kubectl wait --for=condition=ready pod -l k8s-app=kube-dns -n kube-system --timeout=300s
-
-echo "=== Cluster Ready! ==="
-echo "Resource Group: $RESOURCE_GROUP"
-echo "AKS Name: $AKS_NAME"
-echo "Node Size: B2s_v2 Spot"
-echo "Cost: ~$0.09/hour (up to 70% savings!)"
-echo ""
-echo "To stop everything, run: ./delete-test-cluster.sh"
+# Get credentials and setup Kubernetes resources (namespace, secrets, ConfigMap, deployment, service)
+# ... (rest of the automated setup)
 ```
 
 ### Delete Everything Script
@@ -138,24 +153,58 @@ Create `delete-test-cluster.sh`:
 #!/bin/bash
 # delete-test-cluster.sh
 
-echo "=== Finding Test Resources ==="
-# Find the most recent test resource group
-RESOURCE_GROUP=$(az group list --query "[?contains(name, 'test-')].name" -o tsv | sort -r | head -1)
+echo "=== Finding All Test Resources ==="
+# Find ALL test resource groups
+TEST_GROUPS=$(az group list --query "[?contains(name, 'test-')].name" -o tsv)
 
-if [ ! -z "$RESOURCE_GROUP" ]; then
-    echo "Found test resource group: $RESOURCE_GROUP"
-    echo "Deleting ALL resources..."
+if [ ! -z "$TEST_GROUPS" ]; then
+    echo "Found test resource groups:"
+    echo "$TEST_GROUPS"
+    echo ""
+    echo "Deleting ALL test resource groups..."
     
-    # Delete entire resource group (stops ALL billing)
-    az group delete --name $RESOURCE_GROUP --yes --no-wait
+    # Delete all test resource groups
+    for GROUP in $TEST_GROUPS; do
+        echo "Deleting: $GROUP"
+        az group delete --name $GROUP --yes --no-wait
+    done
     
+    echo ""
     echo "=== Complete Stop Achieved! ==="
-    echo "All resources deleted"
+    echo "All test resources deleted"
     echo "Cost: $0/hour"
-    echo "Resource Group: $RESOURCE_GROUP"
+    echo "Deleted groups: $(echo "$TEST_GROUPS" | wc -l | tr -d ' ')"
 else
     echo "No test resource groups found"
 fi
+
+echo ""
+echo "=== Checking Permanent Resources ==="
+
+# Check if permanent group exists
+PERMANENT_RG="quote-azure-k8-backend"
+RG_EXISTS=$(az group show --name $PERMANENT_RG --query name --output tsv 2>/dev/null)
+
+if [ ! -z "$RG_EXISTS" ]; then
+    echo "Found permanent resource group: $PERMANENT_RG"
+    echo "Deleting permanent resources:"
+    echo "  📦 Container Registry: kabulterquoteazurek8acr"
+    echo "  💾 Storage Account: kabulterquotek8store"
+    echo "  💰 Saving ~€0.14/day"
+    echo ""
+    echo "Deleting permanent resource group: $PERMANENT_RG"
+    az group delete --name $PERMANENT_RG --yes --no-wait
+    echo "✅ Permanent resources deleted - Zero cost achieved!"
+else
+    echo "✅ No permanent resource group found - Zero cost achieved!"
+fi
+
+echo ""
+echo "=== Summary ==="
+echo "🧹 Test resources: Deleted"
+echo "📦 Permanent resources: Deleted"
+echo "💰 Total cost: €0.00/hour"
+echo "🎉 Zero cost achieved!"
 ```
 
 ### Make Scripts Executable
@@ -165,73 +214,138 @@ chmod +x create-test-cluster.sh
 chmod +x delete-test-cluster.sh
 ```
 
-## 🏗️ Step 2: Resource Group Strategy
+## 🏗️ Step 2: Zero-Cost Resource Strategy
 
-### Two Resource Groups Approach
+### All-in-One Fixed Resource Groups
 
-**Permanent Resources** (keep these running):
-- **`quote-azure-k8-backend`** - ACR, Storage Account
-- **Cost**: ~$1-3/month (very cheap)
-- **Breakdown**: ACR (~$0.05) + Storage (~$0.10) + Data transfer (~$0.50-2.00)
+**New Approach - Fixed Names with Auto-Cleanup**:
+- **`quote-azure-k8-backend`** - AKS + ACR + Storage (everything)
+- **Cost**: ~$0.41/hour when testing, **€0.00 when stopped**
+- **Benefit**: True zero cost when not testing
+- **Smart cleanup**: Automatically deletes existing resources first
 
-**Temporary Resources** (created/deleted by scripts):
-- **`test-<timestamp>`** - AKS cluster only
-- **Cost**: $0.15/hour when testing, $0 when deleted
+**What Gets Created Each Test**:
+- 📦 **ACR Registry**: `kabulterquotek8acr`
+- 💾 **Storage Account**: `kabulterquotek8storage`
+- 🚀 **AKS Cluster**: `test-aks` with spot instances
+- 🌐 **LoadBalancer**: Public IP for external access
 
-## 🏗️ Step 3: One-Time Setup
+**What Gets Deleted**:
+- ✅ Fixed resource group (`quote-azure-k8-backend`)
+- ✅ Old test resource groups (`test-*`) - backward compatible
+- ✅ ACR, Storage, AKS - everything!
+- ✅ **Zero cost achieved** when stopped
+
+## 🎯 Step 3: Usage
+
+### 🚀 Start Testing (Creates Everything)
 
 ```bash
-# Create permanent resource group
-PERMANENT_RG="quote-azure-k8-backend"
-LOCATION="westeurope"
-ACR_NAME="kabulterquoteazurek8acr"
-
-az group create --name $PERMANENT_RG --location $LOCATION
-
-# Create ACR (permanent)
-az acr create --resource-group $PERMANENT_RG --name $ACR_NAME --sku Basic
-
-# Create Storage Account (permanent)
-az storage account create \
-  --name kabulterquotek8store \
-  --resource-group $PERMANENT_RG \
-  --location $LOCATION \
-  --sku Standard_LRS
-
-# Get storage connection string for ConfigMap
-STORAGE_CONNECTION=$(az storage account show-connection-string \
-  --name kabulterquotek8store \
-  --resource-group $PERMANENT_RG \
-  --query "connectionString" --output tsv)
-
-echo "Storage Connection String: $STORAGE_CONNECTION"
+# One command creates complete environment
+./create-test-cluster.sh
 ```
 
-## 📦 Step 4: Build and Push Docker Image
+**What happens automatically:**
+- ✅ Creates temporary resource group
+- ✅ Creates ACR registry
+- ✅ Creates storage account
+- ✅ Creates AKS cluster with spot instances
+- ✅ Builds and pushes Docker image
+- ✅ Deploys application
+- ✅ Provides ready-to-use URL
 
+### 🛑 Stop Testing (Deletes Everything)
+
+```bash
+# One command deletes everything - zero cost!
+./delete-test-cluster.sh
+```
+
+**What gets deleted automatically:**
+- 🗑️ All test resource groups
+- 🗑️ ACR registries
+- 🗑️ Storage accounts
+- 🗑️ AKS clusters
+- 🗑️ Old permanent resources
+- 💰 **Result: €0.00/hour**
+
+### 📊 Cost Summary
+
+| Status | Cost | Resources |
+|--------|------|-----------|
+| **Testing** | ~$0.41/hour | AKS + ACR + Storage |
+| **Stopped** | **€0.00/hour** | Everything deleted |
+| **Weekend off** | **€0.00** | True zero cost |
+
+## 📦 Step 4: Docker Build & Push (Now Automatic)
+
+**The Docker build and push process is now fully automated in the create script!**
+
+### 🔧 What the Script Does Automatically:
+```bash
+# ✅ All handled by create-test-cluster.sh:
+
+# 1. Login to Azure Container Registry
+az acr login --name $ACR_NAME
+
+# 2. Build Docker image for AMD64 (required for AKS)
+docker buildx build --platform linux/amd64 -t $ACR_NAME.azurecr.io/quote-azure-k8-backend:latest . --push
+
+# 3. Push image to ACR
+# (The --push flag builds and pushes in one command)
+```
+
+### 📋 Docker Build Process Explained:
+
+1. **🔐 ACR Login**: Authenticates with Azure Container Registry
+2. **🏗️ Build**: Creates Docker image with AMD64 architecture (required for AKS)
+3. **📤 Push**: Uploads image to ACR for Kubernetes to pull
+4. **✅ Verify**: Image is now available in `kabulterquotek8acr.azurecr.io`
+
+### 🎯 Result:
+- ✅ **Image**: `kabulterquotek8acr.azurecr.io/quote-azure-k8-backend:latest`
+- ✅ **Architecture**: AMD64 (compatible with AKS)
+- ✅ **Ready**: Kubernetes can pull and deploy the image
+
+### 🔍 Manual Docker Build (If Needed):
 ```bash
 # Navigate to project directory
 cd quote-azure-k8-backend
 
-# Build the production image
-docker build -t quote-azure-k8-backend:latest .
+# Build the production image (AMD64 for AKS)
+docker buildx build --platform linux/amd64 -t quote-azure-k8-backend:latest .
 
 # Tag for Azure Container Registry
-docker tag quote-azure-k8-backend:latest kabulterquoteazurek8acr.azurecr.io/quote-azure-k8-backend:latest
+docker tag quote-azure-k8-backend:latest kabulterquotek8acr.azurecr.io/quote-azure-k8-backend:latest
 
 # Login to ACR
-az acr login --name kabulterquoteazurek8acr
+az acr login --name kabulterquotek8acr
 
 # Push the image
-docker push kabulterquoteazurek8acr.azurecr.io/quote-azure-k8-backend:latest
+docker push kabulterquotek8acr.azurecr.io/quote-azure-k8-backend:latest
 
 # Verify the image
-az acr repository list --name kabulterquoteazurek8acr --output table
+az acr repository list --name kabulterquotek8acr --output table
 ```
 
-## ⚙️ Step 5: Create Kubernetes Manifests
+## ⚙️ Step 5: Kubernetes Manifests (Now Automatic)
 
-### Create ConfigMap for AKS
+**All Kubernetes manifests are now created automatically by the create script!**
+
+### What the Script Creates Automatically:
+```bash
+# ✅ All handled by create-test-cluster.sh:
+cat > temp-deployment.yaml << EOF
+# ConfigMap with dynamic storage connection
+# Deployment with spot tolerations
+# Service with LoadBalancer
+EOF
+kubectl apply -f temp-deployment.yaml
+```
+
+### Manual Kubernetes Setup (If Needed):
+
+#### Create ConfigMap for AKS
 
 Create `configmap-aks.yaml` (replace with your actual connection string):
 
@@ -248,9 +362,7 @@ data:
   Logging__Console__LogLevel__Default: "Warning"
 ```
 
-**Important**: Replace `YOUR_STORAGE_CONNECTION_STRING_HERE` with the connection string from the One-Time Setup.
-
-### Create Secret for JWT
+#### Create Secret for JWT
 
 ```bash
 # Create JWT secret for AKS (use a secure key in production)
@@ -259,103 +371,17 @@ kubectl create secret generic quote-app-secret-aks \
   --namespace=quote-app
 ```
 
-**Note**: This creates `quote-app-secret-aks` to avoid conflicts with local deployment's `quote-app-secret`.
+#### Deploy Application
 
-### Create Deployment for AKS
+```bash
+# Apply ConfigMap
+kubectl apply -f configmap-aks.yaml
 
-Create `deployment-aks.yaml`:
+# Apply deployment with spot tolerations
+kubectl apply -f deployment-aks-spot.yaml
 
-```yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: quote-app-deployment
-  namespace: quote-app
-  labels:
-    app: quote-app
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: quote-app
-  template:
-    metadata:
-      labels:
-        app: quote-app
-    spec:
-      containers:
-      - name: quote-app
-        image: kabulterquoteazurek8acr.azurecr.io/quote-azure-k8-backend:latest
-        imagePullPolicy: Always
-        ports:
-        - containerPort: 8080
-        env:
-        - name: ASPNETCORE_ENVIRONMENT
-          valueFrom:
-            configMapKeyRef:
-              name: quote-app-config
-              key: ASPNETCORE_ENVIRONMENT
-        - name: TableStorageConnectionString
-          valueFrom:
-            configMapKeyRef:
-              name: quote-app-config
-              key: TableStorageConnectionString
-        - name: JwtSecret
-          valueFrom:
-            secretKeyRef:
-              name: quote-app-secret-aks
-              key: JwtSecret
-        - name: Logging__Console__Enabled
-          valueFrom:
-            configMapKeyRef:
-              name: quote-app-config
-              key: Logging__Console__Enabled
-        - name: Logging__Console__LogLevel__Default
-          valueFrom:
-            configMapKeyRef:
-              name: quote-app-config
-              key: Logging__Console__LogLevel__Default
-        resources:
-          requests:
-            memory: "256Mi"
-            cpu: "250m"
-          limits:
-            memory: "512Mi"
-            cpu: "500m"
-        livenessProbe:
-          httpGet:
-            path: /api/quotes/random
-            port: 8080
-          initialDelaySeconds: 30
-          periodSeconds: 10
-          timeoutSeconds: 5
-        readinessProbe:
-          httpGet:
-            path: /api/quotes/random
-            port: 8080
-          initialDelaySeconds: 5
-          periodSeconds: 5
-          timeoutSeconds: 3
-```
-
-### Create Service for AKS
-
-Create `service-aks.yaml`:
-
-```yaml
-apiVersion: v1
-kind: Service
-metadata:
-  name: quote-app-service
-  namespace: quote-app
-spec:
-  selector:
-    app: quote-app
-  ports:
-  - protocol: TCP
-    port: 80
-    targetPort: 8080
-  type: LoadBalancer
+# Apply service
+kubectl apply -f service-aks.yaml
 ```
 
 ## 🚀 Step 6: Testing Workflow
@@ -370,13 +396,14 @@ spec:
 ```
 
 **What this script now does automatically:**
-- ✅ Creates AKS cluster with B2s_v2 spot instances
+- ✅ Creates complete temporary resource group (AKS + ACR + Storage)
 - ✅ Sets up ACR authentication and credentials
 - ✅ Builds and pushes correct AMD64 image
-- ✅ Creates namespace, secrets, and ConfigMap
+- ✅ Creates namespace, secrets, and ConfigMap with dynamic storage
 - ✅ Deploys application to spot pool with all environment variables
 - ✅ Tests the application
 - ✅ Provides ready-to-use URL
+- ✅ **Zero cost when stopped** - everything deleted together
 
 ### 📋 Manual Steps (If needed)
 
@@ -448,9 +475,13 @@ Cost: ~$0.39/hour total (system + spot pool)
 | **Weekend (8h/day)** | ~$24.96 |
 
 **💡 Cost Breakdown:**
-- System Pool (required): ~$0.30/hour
-- Your App on Spot Pool: ~$0.09/hour (70% savings!)
-- **Total**: ~$0.39/hour vs ~$0.60/hour (all regular nodes)
+- AKS Cluster (system + spot pool): ~$0.39/hour
+- ACR Registry: ~$0.01/hour (Basic tier)
+- Storage Account: ~$0.01/hour (minimal usage)
+- **Total**: ~$0.41/hour when running
+- **Zero cost**: When stopped with `./delete-test-cluster.sh`
+
+**🎯 Key Benefit: No permanent storage costs!** Everything is deleted when you stop testing.
 
 ---
 

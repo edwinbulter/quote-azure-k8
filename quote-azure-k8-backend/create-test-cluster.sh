@@ -1,17 +1,49 @@
 #!/bin/bash
 # create-test-cluster.sh
-PERMANENT_RG="quote-azure-k8-backend"  # Existing resource group with ACR/Storage
-RESOURCE_GROUP="test-$(date +%s)"   # Temporary resource group for AKS
+RESOURCE_GROUP="quote-azure-k8-backend"  # Fixed name
 AKS_NAME="test-aks"
 LOCATION="westeurope"
-ACR_NAME="kabulterquoteazurek8acr"
+ACR_NAME="kabulterquotek8acr"  # Shorter name
+STORAGE_ACCOUNT="kabulterquotek8storage"  # Shorter name (fits 24 char limit)
 
 echo "=== Creating Complete Test Environment ==="
-echo "Permanent RG: $PERMANENT_RG (ACR, Storage)"
-echo "Temporary RG: $RESOURCE_GROUP (AKS)"
+echo "Resource Group: $RESOURCE_GROUP (All resources)"
+echo "AKS Name: $AKS_NAME"
+echo "ACR Name: $ACR_NAME"
+echo "Storage Account: $STORAGE_ACCOUNT"
 
-# Create temporary resource group for AKS
+# Clean up if resources already exist
+if az group show --name $RESOURCE_GROUP >/dev/null 2>&1; then
+    echo "⚠️  Resource group already exists. Cleaning up first..."
+    az group delete --name $RESOURCE_GROUP --yes --no-wait
+    echo "Waiting for cleanup to complete..."
+    while az group show --name $RESOURCE_GROUP >/dev/null 2>&1; do
+        echo "Still deleting... (waiting 10 seconds)"
+        sleep 10
+    done
+    echo "✅ Cleanup complete. Creating fresh environment..."
+fi
+
+# Create resource group for everything
 az group create --name $RESOURCE_GROUP --location $LOCATION
+
+# Create ACR
+echo "Creating Azure Container Registry..."
+az acr create --resource-group $RESOURCE_GROUP --name $ACR_NAME --sku Basic --location $LOCATION
+
+# Create Storage Account
+echo "Creating Storage Account..."
+az storage account create \
+  --name $STORAGE_ACCOUNT \
+  --resource-group $RESOURCE_GROUP \
+  --location $LOCATION \
+  --sku Standard_LRS \
+  --kind StorageV2
+
+# Get storage connection string
+STORAGE_CONNECTION=$(az storage account show-connection-string --name $STORAGE_ACCOUNT --resource-group $RESOURCE_GROUP --query connectionString --output tsv)
+
+echo "Storage connection: $STORAGE_CONNECTION"
 
 # Create AKS with B2s_v2 nodes first, then add spot pool
 echo "Creating AKS cluster with B2s_v2 nodes..."
@@ -84,7 +116,7 @@ cd ..
 
 # Deploy application with spot tolerations
 echo "Deploying application to spot pool..."
-cat > temp-deployment.yaml << 'EOF'
+cat > temp-deployment.yaml << EOF
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -92,7 +124,7 @@ metadata:
   namespace: quote-app
 data:
   ASPNETCORE_ENVIRONMENT: "Production"
-  TableStorageConnectionString: "DefaultEndpointsProtocol=https;EndpointSuffix=core.windows.net;AccountName=kabulterquotek8store;AccountKey=AkXEFTVaPwvto4WWiuJxb3B+UvyItq8ibEt7FXAPzhA6PI5QZoJOsTUWyTxfGAlx/uyGF8OMlkc++AStM8mWwQ==;BlobEndpoint=https://kabulterquotek8store.blob.core.windows.net/;FileEndpoint=https://kabulterquotek8store.file.core.windows.net/;QueueEndpoint=https://kabulterquotek8store.queue.core.windows.net/;TableEndpoint=https://kabulterquotek8store.table.core.windows.net/"
+  TableStorageConnectionString: "$STORAGE_CONNECTION"
   Logging__Console__Enabled: "false"
   Logging__Console__LogLevel__Default: "Warning"
 ---
@@ -122,7 +154,7 @@ spec:
         kubernetes.azure.com/scalesetpriority: "spot"
       containers:
       - name: quote-azure-k8-backend
-        image: kabulterquoteazurek8acr.azurecr.io/quote-azure-k8-backend:latest
+        image: $ACR_NAME.azurecr.io/quote-azure-k8-backend:latest
         ports:
         - containerPort: 8080
         env:
@@ -200,10 +232,13 @@ curl -s http://$SERVICE_IP/api/quotes/random || echo "Application may still be s
 echo "=== 🎉 Complete Success! ==="
 echo "Resource Group: $RESOURCE_GROUP"
 echo "AKS Name: $AKS_NAME"
+echo "ACR Name: $ACR_NAME"
+echo "Storage Account: $STORAGE_ACCOUNT"
 echo "Node Size: B2s_v2 Spot"
 echo "Application: Deployed and running on spot instances"
 echo "Service URL: http://$SERVICE_IP/api/quotes/random"
-echo "Cost: ~$0.39/hour total (system + spot pool)"
+echo "Cost: ~$0.39/hour total (AKS + ACR + Storage)"
+echo "💡 Zero cost when stopped: ./delete-test-cluster.sh"
 echo ""
 echo "🚀 Your application is ready!"
 echo "📊 Test with: curl http://$SERVICE_IP/api/quotes/random"

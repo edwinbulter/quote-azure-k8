@@ -173,6 +173,14 @@ kubectl diff -f service.yaml -n quote-app
 kubectl apply -f service.yaml --dry-run=client
 ```
 
+## Azure commands
+```bash
+# List all resource groups
+az group list --query "[?contains(name, 'k8')]"
+```
+
+
+
 ### GitOps
 Als je dit echt serieus wilt aanpakken (vooral in teams), gebruik je GitOps met tools zoals ArgoCD of Flux.
 - Hoe het werkt: Je commit je service.yaml naar GitHub/GitLab.
