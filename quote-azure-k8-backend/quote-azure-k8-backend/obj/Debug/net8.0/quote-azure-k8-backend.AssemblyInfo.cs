@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("quote-azure-k8-backend")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+7e918b52b04e64de79354d5f31972aab62969efc")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+a51123514eb848c649174e48b3ce03529742051a")]
 [assembly: System.Reflection.AssemblyProductAttribute("quote-azure-k8-backend")]
 [assembly: System.Reflection.AssemblyTitleAttribute("quote-azure-k8-backend")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

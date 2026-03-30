@@ -1,16 +1,46 @@
 #!/bin/bash
 # create-test-cluster.sh
-RESOURCE_GROUP="quote-azure-k8-backend"  # Fixed name
-AKS_NAME="test-aks"
-LOCATION="westeurope"
-ACR_NAME="kabulterquotek8acr"  # Shorter name
-STORAGE_ACCOUNT="kabulterquotek8storage"  # Shorter name (fits 24 char limit)
+
+# Load environment variables from .env file if it exists
+if [ -f ".env" ]; then
+    export $(cat .env | grep -v '^#' | xargs)
+fi
+
+# Azure Resource Configuration (REQUIRED from environment)
+RESOURCE_GROUP=$RESOURCE_GROUP
+AKS_NAME=$AKS_NAME
+LOCATION=$LOCATION
+ACR_NAME=$ACR_NAME
+STORAGE_ACCOUNT=$STORAGE_ACCOUNT
+
+# Validate required environment variables
+if [ -z "$RESOURCE_GROUP" ] || [ -z "$ACR_NAME" ] || [ -z "$STORAGE_ACCOUNT" ]; then
+    echo "❌ ERROR: Required environment variables not set!"
+    echo "📋 Please configure your .env file with:"
+    echo "   RESOURCE_GROUP=your-resource-group"
+    echo "   ACR_NAME=your-acr-name"
+    echo "   STORAGE_ACCOUNT=your-storage-name"
+    echo "   AKS_NAME=your-aks-name"
+    echo "   LOCATION=your-location"
+    echo ""
+    echo "💡 Copy .env.example to .env and configure it"
+    exit 1
+fi
 
 echo "=== Creating Complete Test Environment ==="
 echo "Resource Group: $RESOURCE_GROUP (All resources)"
 echo "AKS Name: $AKS_NAME"
 echo "ACR Name: $ACR_NAME"
 echo "Storage Account: $STORAGE_ACCOUNT"
+
+# Check for JWT secret in environment
+if [ -z "$JWT_SECRET" ]; then
+    echo "⚠️  JWT_SECRET not set in environment"
+    echo "💡 To set your own JWT secret:"
+    echo "   export JWT_SECRET=\"your-secure-jwt-secret-here\""
+    echo "📋 Or copy .env.example to .env and configure it"
+    echo "🔧 Using development default (change for production!)"
+fi
 
 # Clean up if resources already exist
 if az group show --name $RESOURCE_GROUP >/dev/null 2>&1; then
@@ -86,8 +116,10 @@ kubectl create namespace quote-app
 
 # Create JWT secret
 echo "Creating JWT secret..."
+# Load JWT secret from environment or use default for development
+JWT_SECRET=${JWT_SECRET:-"dev-jwt-secret-change-in-production"}
 kubectl create secret generic quote-app-secret-aks \
-  --from-literal=JwtSecret=$(echo -n "mijn-azure-k8-pipo-secret" | base64) \
+  --from-literal=JwtSecret=$(echo -n "$JWT_SECRET" | base64) \
   --namespace=quote-app
 
 # Enable ACR admin user for authentication
@@ -110,6 +142,9 @@ kubectl create secret docker-registry acr-secret \
 
 # Build and push correct architecture image
 echo "Building and pushing AMD64 image..."
+# Login to ACR first
+echo "Logging into Azure Container Registry..."
+az acr login --name $ACR_NAME
 cd quote-azure-k8-backend
 docker buildx build --platform linux/amd64 -t $ACR_NAME.azurecr.io/quote-azure-k8-backend:latest . --push
 cd ..
