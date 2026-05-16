@@ -181,16 +181,13 @@ kubectl port-forward service/quote-app-service 8080:80 -n quote-app &
 curl http://localhost:8080/api/quotes/random
 ```
 
-### ☁️ Azure Deployment Options
+### ☁️ Azure Deployment
 
-#### Option 1: Automated Script (Recommended)
+Automated Script:
 ```bash
 # One-command deployment
 ./create-test-cluster.sh
 ```
-
-#### Option 2: Manual Step-by-Step
-See [kubernetes-aks-deployment.md](quote-azure-k8-backend/doc/kubernetes-aks-deployment.md) for detailed manual deployment instructions.
 
 ## 📊 Cost Management
 
