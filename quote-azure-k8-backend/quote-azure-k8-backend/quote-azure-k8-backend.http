@@ -1,6 +1,0 @@
-@quote_azure_k8_backend_HostAddress = http://localhost:5157
-
-GET {{quote_azure_k8_backend_HostAddress}}/weatherforecast/
-Accept: application/json
-
-###
